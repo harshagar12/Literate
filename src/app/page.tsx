@@ -423,7 +423,7 @@ export default function Home() {
         file = (event.target as HTMLInputElement).files?.[0] ?? null;
     }
 
-    if (!file || !file.type.includes('pdf')) {
+    if (!file || file.type !== 'application/pdf') {
       toast.error('Invalid File', {
         description: 'Please upload a valid PDF file.',
       });
@@ -431,66 +431,82 @@ export default function Home() {
     }
 
     setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
 
-      const response = await fetch('/api/parse-pdf', {
-        method: 'POST',
-        body: formData,
-      });
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to parse PDF.');
-      }
+    reader.onload = async () => {
+        try {
+            const fileDataUri = reader.result as string;
 
-      const { text } = await response.json();
+            const response = await fetch('/.netlify/functions/parse-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file: fileDataUri }),
+            });
 
-      const tempTitle = file.name.replace(/\.pdf$/i, '');
-      const tempAuthor = 'Uploaded Book';
-      // Create a stable ID from title and author
-      const bookId = `${tempTitle}-${tempAuthor}`.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            if (!response.ok) {
+                let errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    console.error("Failed to parse error response as JSON.", e);
+                }
+                throw new Error(errorMessage);
+            }
 
-      const newBook: Book = {
-        id: bookId,
-        title: tempTitle,
-        author: tempAuthor,
-        content: text,
-      };
-      
-      // Save book metadata (without content) in the background.
-      saveBook(newBook).catch(error => {
-          console.error("Failed to save book to Firestore:", error);
-          toast.error("Sync Error", {
-            description: "Could not save the book. Progress may not be saved.",
-          });
-      });
+            const { text } = await response.json();
 
-      // Optimistically update the UI.
-      setBooks(prevBooks => {
-        const existingBookIndex = prevBooks.findIndex(b => b.id === newBook.id);
-        if (existingBookIndex !== -1) {
-          const updatedBooks = [...prevBooks];
-          updatedBooks[existingBookIndex] = { ...updatedBooks[existingBookIndex], ...newBook }; // Merge to keep old data if any
-          return updatedBooks;
+            const tempTitle = file!.name.replace(/\.pdf$/i, '');
+            const tempAuthor = 'Uploaded Book';
+            const bookId = `${tempTitle}-${tempAuthor}`.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+            const newBook: Book = {
+                id: bookId,
+                title: tempTitle,
+                author: tempAuthor,
+                content: text,
+            };
+
+            saveBook(newBook).catch(error => {
+                console.error("Failed to save book to Firestore:", error);
+                toast.error("Sync Error", {
+                    description: "Could not save the book. Progress may not be saved.",
+                });
+            });
+
+            setBooks(prevBooks => {
+                const existingBookIndex = prevBooks.findIndex(b => b.id === newBook.id);
+                if (existingBookIndex !== -1) {
+                    const updatedBooks = [...prevBooks];
+                    updatedBooks[existingBookIndex] = { ...updatedBooks[existingBookIndex], ...newBook };
+                    return updatedBooks;
+                }
+                return [...prevBooks, newBook];
+            });
+            setSelectedBook(newBook);
+        
+        } catch (error) {
+            console.error("Error parsing PDF:", error);
+            const errorMessage = error instanceof Error ? error.message : "Could not read the PDF file. It might be too large, corrupted, or protected.";
+            toast.error("PDF Parsing Error", {
+                description: errorMessage,
+            });
+        } finally {
+            setIsUploading(false);
+            if ('target' in event && event.target) {
+                (event.target as HTMLInputElement).value = '';
+            }
         }
-        return [...prevBooks, newBook];
-      });
-      setSelectedBook(newBook);
-      
-    } catch (error) {
-      console.error("Error parsing PDF:", error);
-      const errorMessage = error instanceof Error ? error.message : "Could not read the PDF file. It might be corrupted or protected.";
-      toast.error("PDF Parsing Error", {
-        description: errorMessage,
-      });
-    } finally {
-      setIsUploading(false);
-      if ('target' in event && event.target) {
-        (event.target as HTMLInputElement).value = '';
-      }
-    }
+    };
+    
+    reader.onerror = () => {
+        setIsUploading(false);
+        toast.error("File Reading Error", {
+          description: "Could not read the local file.",
+        });
+    };
   };
   
   const handleDownloadNotes = () => {
@@ -555,54 +571,90 @@ export default function Home() {
       );
     }
 
-    // Only show the upload card, not the library or trial books
     return (
       <div className="flex flex-col min-h-screen bg-background">
         <header className="flex items-center justify-between p-4 border-b shrink-0">
-          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
             <BookOpen className="w-6 h-6 text-primary" />
             <span className="font-headline text-xl font-semibold">Literate</span>
-          </div>
-          <ThemeToggle />
+            </div>
+            <ThemeToggle />
         </header>
         <main className="container mx-auto p-4 md:p-8 flex-grow">
-          <h1 className="text-3xl md:text-4xl font-bold mb-8 text-left">Select a Book</h1>
-          <div className="flex flex-1 items-center justify-center min-h-[60vh]">
-            <div className="grid grid-cols-1 w-full max-w-xs gap-6">
-              <Card
-                className={cn(
-                  "cursor-pointer hover:shadow-xl transition-all duration-300 rounded-lg group flex flex-col items-center justify-center text-center bg-secondary/50 border-2 border-dashed",
-                  isDragging && "border-primary bg-accent/50 scale-105",
-                  isUploading && "pointer-events-none"
-                )}
-                onClick={() => !isUploading && fileInputRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
-                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
-                onDrop={handlePdfUpload}
-              >
-                {isUploading ? (
-                  <div className="flex flex-col items-center justify-center p-6 w-full">
-                    <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-                    <p className="text-muted-foreground font-semibold">Processing PDF...</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-6">
-                    <UploadCloud className="w-12 h-12 text-muted-foreground mb-4" />
-                    <CardTitle className="text-lg">Upload Book</CardTitle>
-                    <CardDescription className="text-sm mt-1">Drag & drop or click</CardDescription>
-                  </div>
-                )}
-              </Card>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handlePdfUpload}
-                accept=".pdf"
-                className="hidden"
-                disabled={isUploading}
-              />
-            </div>
-          </div>
+            <h1 className="text-3xl md:text-4xl font-bold mb-8 text-left">My Library</h1>
+            {isLoading && !books.length ? (
+                <div className="text-center py-10">
+                    <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+                    <p className="mt-4 text-muted-foreground">Loading your library...</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    {books.map((book) => (
+                      <Card 
+                          key={book.id} 
+                          className="cursor-pointer hover:shadow-xl transition-shadow duration-300 overflow-hidden rounded-lg group" 
+                          onClick={() => {
+                            if (!book.content) {
+                                toast.info("Upload Required", {
+                                    description: "Please upload the PDF file again to start reading."
+                                });
+                            } else {
+                                setSelectedBook(book)
+                            }
+                          }}
+                      >
+                          <CardHeader className="p-0">
+                              <div className="relative aspect-[4/5] w-full bg-secondary overflow-hidden">
+                              <Image 
+                                  src={`https://placehold.co/400x500.png`}
+                                  alt={`Cover for ${book.title}`}
+                                  fill
+                                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+                                  data-ai-hint="book cover abstract"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                              <div className="p-4 absolute bottom-0 text-white">
+                                  <CardTitle className="text-lg leading-tight">{book.title}</CardTitle>
+                                  <CardDescription className="text-sm text-white/90 mt-1">{book.author}</CardDescription>
+                              </div>
+                              </div>
+                          </CardHeader>
+                      </Card>
+                    ))}
+                    <Card
+                      className={cn(
+                        "cursor-pointer hover:shadow-xl transition-all duration-300 rounded-lg group flex flex-col items-center justify-center text-center bg-secondary/50 border-2 border-dashed",
+                        isDragging && "border-primary bg-accent/50 scale-105",
+                        isUploading && "pointer-events-none"
+                      )}
+                      onClick={() => !isUploading && fileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+                      onDrop={handlePdfUpload}
+                    >
+                      {isUploading ? (
+                          <div className="flex flex-col items-center justify-center p-6 w-full">
+                              <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
+                              <p className="text-muted-foreground font-semibold">Processing PDF...</p>
+                          </div>
+                      ) : (
+                          <div className="flex flex-col items-center justify-center p-6">
+                              <UploadCloud className="w-12 h-12 text-muted-foreground mb-4" />
+                              <CardTitle className="text-lg">Upload Book</CardTitle>
+                              <CardDescription className="text-sm mt-1">Drag & drop or click</CardDescription>
+                          </div>
+                      )}
+                    </Card>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handlePdfUpload}
+                        accept=".pdf"
+                        className="hidden"
+                        disabled={isUploading}
+                    />
+                </div>
+            )}
         </main>
       </div>
     );
@@ -667,17 +719,17 @@ export default function Home() {
                         <span className="sr-only">Open Workspace</span>
                     </Button>
                     </SheetTrigger>
-                    <SheetContent className="w-[400px] sm:w-[540px] p-0 h-full flex flex-col">
+                    <SheetContent className="w-[400px] sm:w-[540px] p-0 flex flex-col">
                     <SheetHeader className="p-4 border-b">
                         <SheetTitle>Workspace</SheetTitle>
                     </SheetHeader>
-                    <Tabs defaultValue="notes" className="flex-grow flex flex-col">
+                    <Tabs defaultValue="notes" className="flex-grow flex flex-col min-h-0">
                         <TabsList className="grid w-full grid-cols-3 mt-4 px-4">
                         <TabsTrigger value="notes">Notes</TabsTrigger>
                         <TabsTrigger value="playlist">Playlist</TabsTrigger>
                         <TabsTrigger value="stats">Stats</TabsTrigger>
                         </TabsList>
-                        <TabsContent value="notes" className="p-4 overflow-y-auto">
+                        <TabsContent value="notes" className="flex-grow flex flex-col p-4 min-h-0">
                         <h3 className="text-lg font-semibold mb-2">Add a Note</h3>
                         <div className="space-y-2">
                             <Select value={newNoteCategory} onValueChange={(value) => setNewNoteCategory(value as NoteCategory)}>
@@ -709,7 +761,7 @@ export default function Home() {
                             Download PDF
                           </Button>
                         </div>
-                        <ScrollArea className="flex-1 min-h-0">
+                        <ScrollArea className="flex-grow">
                             <div className="space-y-4">
                             {notes.length > 0 ? notes.map((note) => (
                             <Card key={note.id}>
@@ -732,7 +784,7 @@ export default function Home() {
                             </div>
                         </ScrollArea>
                         </TabsContent>
-                        <TabsContent value="playlist" className="p-4 overflow-y-auto">
+                        <TabsContent value="playlist" className="flex-grow flex flex-col p-4 min-h-0">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold">Audio Playlist</h3>
                             <input
@@ -749,7 +801,7 @@ export default function Home() {
                             </Button>
                             </label>
                         </div>
-                        <ScrollArea className="flex-1 min-h-0">
+                        <ScrollArea className="flex-grow">
                             <div className="space-y-2">
                             {audioFiles.length > 0 ? audioFiles.map((file, index) => (
                                 <Card 
@@ -771,7 +823,7 @@ export default function Home() {
                             </div>
                         </ScrollArea>
                         </TabsContent>
-                        <TabsContent value="stats" className="p-4 overflow-y-auto">
+                        <TabsContent value="stats" className="flex-grow flex flex-col p-4 overflow-y-auto">
                         <h3 className="text-lg font-semibold mb-4">Reading Analytics</h3>
                         <div className="grid gap-4 sm:grid-cols-2">
                             <Card>
@@ -817,7 +869,7 @@ export default function Home() {
                         </div>
                         <div className="mt-6">
                             <h4 className="text-md font-semibold mb-2">Session History</h4>
-                            <ScrollArea className="h-48 min-h-0">
+                            <ScrollArea className="h-48">
                             <div className="space-y-2 pr-4">
                                 {sessions.length > 0 ? [...sessions].reverse().map((session, index) => (
                                 <Card key={index} className="p-3">
@@ -939,7 +991,7 @@ export default function Home() {
         </div>
         <aside className="h-full bg-card border-l overflow-hidden">
             <div className="p-4 h-full flex flex-col">
-                <div className="flex items-center justify-between border-b pb-2 mb-4">
+                <div className="flex items-center justify-between border-b pb-2 mb-4 shrink-0">
                     <h2 className="text-lg font-semibold">AI Assistant</h2>
                     <Button variant="ghost" size="icon" onClick={() => setIsAssistantOpen(false)}>
                         <X className="w-5 h-5" />
