@@ -5,6 +5,7 @@ import { z } from 'genkit';
 import { Document } from 'genkit/retriever';
 import { retrieve } from '@genkit-ai/ai/retriever';
 
+
 // This is the input validation schema for the request body.
 const AskRequestSchema = z.object({
   question: z.string(),

@@ -52,27 +52,9 @@ import autoTable from "jspdf-autotable";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 
-const LOREM_IPSUM_LONG = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. Pellentesque congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum augue. Praesent egestas leo in pede. Praesent blandit odio eu enim. Pellentesque sed dui ut augue blandit sodales. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed pede pellentesque fermentum. Maecenas adipiscing ante non diam. Sorbi et quilis et. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed pede pellentesque fermentum. Maecenas adipiscing ante non diam. Morbi faustibus, justo non, adipiscing, steque, justus, et. Nulla vitae elit libero, a pharetra augue. Nulla vitae elit libero, a pharetra augue. Donec id elit non mi porta gravida at eget metus. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec ullamcorper nulla non metus auctor fringilla. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. Pellentesque congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum augue. Praesent egestas leo in pede. Praesent blandit odio eu enim. Pellentesque sed dui ut augue blandit sodales. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed pede pellentesque fermentum. Maecenas adipiscing ante non diam. Sorbi et quilis et. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed pede pellentesque fermentum. Maecenas adipiscing ante non diam. Morbi faustibus, justo non, adipiscing, steque, justus, et. Nulla vitae elit libero, a pharetra augue. Nulla vitae elit libero, a pharetra augue. Donec id elit non mi porta gravida at eget metus. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec ullamcorper nulla non metus auctor fringilla.";
-const LOREM_IPSUM_SHORT = "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?";
 const WORDS_PER_PAGE = 250;
 
-const initialBooks: Book[] = [
-  {
-    id: 'lorem-ipsum-long',
-    title: 'The Art of Placeholder',
-    author: 'Cicero & Co.',
-    content: LOREM_IPSUM_LONG,
-  },
-  {
-    id: 'lorem-ipsum-short',
-    title: 'A Brief History of Ipsum',
-    author: 'J. Doe',
-    content: LOREM_IPSUM_SHORT,
-  },
-];
-
 export default function Home() {
-  const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showBookSelection, setShowBookSelection] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -103,29 +85,6 @@ export default function Home() {
   const [isShuffling, setIsShuffling] = useState(false);
   const [volume, setVolume] = useState(0.75);
   const audioRef = useRef<HTMLAudioElement>(null);
-  
-  // Fetch library from Firestore on initial load
-  useEffect(() => {
-    async function fetchLibrary() {
-      setIsLoading(true);
-      try {
-        const libraryBooks = await getLibrary();
-        const bookIds = new Set(libraryBooks.map(b => b.id));
-        const allBooks = [...libraryBooks, ...initialBooks.filter(b => !bookIds.has(b.id))];
-        setBooks(allBooks);
-      } catch (e) {
-        console.error("Error fetching library", e);
-        toast.error("Error", {
-          description: "Could not load your library. Please try again later.",
-        });
-        setBooks(initialBooks); // Fallback to initial books
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchLibrary();
-  }, []);
-
 
   const bookPages = useMemo(() => {
     if (!selectedBook?.content) return [];
@@ -438,19 +397,20 @@ export default function Home() {
     reader.onload = async () => {
         try {
             const fileDataUri = reader.result as string;
-
-            const response = await fetch('/.netlify/functions/parse-pdf', {
+            
+            const response = await fetch('/api/parse-pdf', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ file: fileDataUri }),
             });
-
+            
             if (!response.ok) {
                 let errorMessage = `Server error: ${response.status} ${response.statusText}`;
                 try {
                     const errorData = await response.json();
                     errorMessage = errorData.error || errorMessage;
                 } catch (e) {
+                    errorMessage = `Could not parse the PDF. The file might be too large or complex for the server to handle. (Status: ${response.status})`;
                     console.error("Failed to parse error response as JSON.", e);
                 }
                 throw new Error(errorMessage);
@@ -475,16 +435,7 @@ export default function Home() {
                     description: "Could not save the book. Progress may not be saved.",
                 });
             });
-
-            setBooks(prevBooks => {
-                const existingBookIndex = prevBooks.findIndex(b => b.id === newBook.id);
-                if (existingBookIndex !== -1) {
-                    const updatedBooks = [...prevBooks];
-                    updatedBooks[existingBookIndex] = { ...updatedBooks[existingBookIndex], ...newBook };
-                    return updatedBooks;
-                }
-                return [...prevBooks, newBook];
-            });
+            
             setSelectedBook(newBook);
         
         } catch (error) {
@@ -580,81 +531,41 @@ export default function Home() {
             </div>
             <ThemeToggle />
         </header>
-        <main className="container mx-auto p-4 md:p-8 flex-grow">
-            <h1 className="text-3xl md:text-4xl font-bold mb-8 text-left">My Library</h1>
-            {isLoading && !books.length ? (
-                <div className="text-center py-10">
-                    <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
-                    <p className="mt-4 text-muted-foreground">Loading your library...</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {books.map((book) => (
-                      <Card 
-                          key={book.id} 
-                          className="cursor-pointer hover:shadow-xl transition-shadow duration-300 overflow-hidden rounded-lg group" 
-                          onClick={() => {
-                            if (!book.content) {
-                                toast.info("Upload Required", {
-                                    description: "Please upload the PDF file again to start reading."
-                                });
-                            } else {
-                                setSelectedBook(book)
-                            }
-                          }}
-                      >
-                          <CardHeader className="p-0">
-                              <div className="relative aspect-[4/5] w-full bg-secondary overflow-hidden">
-                              <Image 
-                                  src={`https://placehold.co/400x500.png`}
-                                  alt={`Cover for ${book.title}`}
-                                  fill
-                                  className="object-cover transition-transform duration-300 group-hover:scale-105"
-                                  data-ai-hint="book cover abstract"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                              <div className="p-4 absolute bottom-0 text-white">
-                                  <CardTitle className="text-lg leading-tight">{book.title}</CardTitle>
-                                  <CardDescription className="text-sm text-white/90 mt-1">{book.author}</CardDescription>
-                              </div>
-                              </div>
-                          </CardHeader>
-                      </Card>
-                    ))}
-                    <Card
-                      className={cn(
-                        "cursor-pointer hover:shadow-xl transition-all duration-300 rounded-lg group flex flex-col items-center justify-center text-center bg-secondary/50 border-2 border-dashed",
-                        isDragging && "border-primary bg-accent/50 scale-105",
-                        isUploading && "pointer-events-none"
-                      )}
-                      onClick={() => !isUploading && fileInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
-                      onDrop={handlePdfUpload}
-                    >
-                      {isUploading ? (
-                          <div className="flex flex-col items-center justify-center p-6 w-full">
-                              <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-                              <p className="text-muted-foreground font-semibold">Processing PDF...</p>
-                          </div>
-                      ) : (
-                          <div className="flex flex-col items-center justify-center p-6">
-                              <UploadCloud className="w-12 h-12 text-muted-foreground mb-4" />
-                              <CardTitle className="text-lg">Upload Book</CardTitle>
-                              <CardDescription className="text-sm mt-1">Drag & drop or click</CardDescription>
-                          </div>
-                      )}
-                    </Card>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handlePdfUpload}
-                        accept=".pdf"
-                        className="hidden"
-                        disabled={isUploading}
-                    />
-                </div>
-            )}
+        <main className="flex-grow flex items-center justify-center p-4">
+            <div className="w-full max-w-md">
+                <Card
+                  className={cn(
+                    "cursor-pointer hover:shadow-xl transition-all duration-300 rounded-lg group flex flex-col items-center justify-center text-center bg-secondary/50 border-2 border-dashed h-80",
+                    isDragging && "border-primary bg-accent/50 scale-105",
+                    isUploading && "pointer-events-none"
+                  )}
+                  onClick={() => !isUploading && fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+                  onDrop={handlePdfUpload}
+                >
+                  {isUploading ? (
+                      <div className="flex flex-col items-center justify-center p-6 w-full">
+                          <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
+                          <p className="text-muted-foreground font-semibold">Processing PDF...</p>
+                      </div>
+                  ) : (
+                      <div className="flex flex-col items-center justify-center p-6">
+                          <UploadCloud className="w-12 h-12 text-muted-foreground mb-4" />
+                          <CardTitle className="text-lg">Upload Book</CardTitle>
+                          <CardDescription className="text-sm mt-1">Drag & drop or click</CardDescription>
+                      </div>
+                  )}
+                </Card>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handlePdfUpload}
+                    accept=".pdf"
+                    className="hidden"
+                    disabled={isUploading}
+                />
+            </div>
         </main>
       </div>
     );
