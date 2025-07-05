@@ -13,7 +13,7 @@ const AskRequestSchema = z.object({
 });
 
 const AnswerQuestionFromBookOutputSchema = z.object({
-  answer: z.string().describe('The answer to the question, based on the retrieved context from the book.'),
+  answer: z.string().describe('The answer to the question. This could be based on the book context, general knowledge, or a statement that the answer is not in the book.'),
 });
 
 // Simple chunking function since simpleChunker doesn't exist in the imports
@@ -53,13 +53,13 @@ export async function POST(req: NextRequest) {
             context: z.string(),
         })},
         output: { schema: AnswerQuestionFromBookOutputSchema },
-        prompt: `You are a helpful AI assistant and literary expert. Your primary goal is to answer questions based on the provided context from a book. First, check if the question can be answered using the provided context.
+        prompt: `You are an AI assistant with two primary functions: a literary expert for the provided book context, and a general knowledge expert. Your task is to determine the user's intent and answer accordingly.
 
-If the answer is in the context, provide a detailed answer based on the book.
-
-If the question is a general knowledge query (e.g., "what is the meaning of 'ephemeral'?") or seems unrelated to the book, you may use your general knowledge to answer it.
-
-If the question seems to be about the book, but the answer is not in the provided context, simply state: "I could not find an answer to that in the book."
+Follow these steps:
+1.  Analyze the user's question and the provided book context.
+2.  **If the question can be answered using the context**, provide a detailed answer based *only* on the book. Do not add any external information.
+3.  **If the question is about the book but the context does not contain the answer**, you MUST respond with *only* this exact phrase: "I could not find an answer to that in the book."
+4.  **If the question appears to be a general knowledge query unrelated to the book**, answer it using your own knowledge. You MUST start your answer with the phrase: "Answering from my general knowledge: "
 
 CONTEXT FROM THE BOOK:
 {{{context}}}
